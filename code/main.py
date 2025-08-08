@@ -31,11 +31,6 @@ def hollow_circle(x0, y0, radius, color, thickness=1, bg_color=None):
     circle(x0, y0, radius, color)
     if radius > thickness:
         circle(x0, y0, radius - thickness, bg_color)
-        
-def button(xx, yy, txt, bc, fc):
-    """Draw a square button at (xx, yy) with text"""
-    LCD.rect(xx, yy, 70, 70, bc, True)       # Background square
-    LCD.write_text(txt, xx+8, yy+10, 1, fc) 
 
 # Set up colours
 white = colour(255,255,255)
@@ -45,8 +40,6 @@ blue = colour(0,0,255)
 yellow = colour(255,255,0)
 orange = colour(255,128,30)
 black = colour(0,0,0)
-grey = colour(30,30,30)
-
 center_x = LCD.width // 2
 center_y = LCD.height // 2
 
@@ -62,75 +55,106 @@ def init_screen():
     LCD.fill_rect(0,210,240,35,0x180f)
     LCD.text("V1.0",105,220,white)
     
+def status_screen(tap_id, status, color):
+    init_screen()
+    hollow_circle(120, 125, 75, color, 5, grey)
+    LCD.write_text("Tap", 95, 70, 2, white)
+    LCD.write_text(tap_id, 100, 105, 5, white)
+    LCD.write_text(status, 90, 165, 2, white)
+    LCD.show()
 
+def pressure_to_angle(pressure_mbar):
+    """Convert pressure to gauge angle (0-270° range)"""
+    # Logarithmic scale for better vacuum resolution
+    if pressure_mbar <= 0:
+        return 270  # Prevent math errors
+    
+    log_max = math.log10(ATM_PRESSURE)
+    log_min = math.log10(MIN_PRESSURE)
+    log_p = math.log10(max(pressure_mbar, MIN_PRESSURE))
+    
+    # Scale to 0-270 degrees (left to right)
+    return 270 - (log_p - log_min) / (log_max - log_min) * 270
+
+def pressure_screen(pressure_mbar):
+    """Display pressure gauge with atmospheric on left"""
+    LCD.fill_rect(0, 40, 240, 170, black)
+    
+    # Draw gauge outline
+    hollow_circle(center_x, center_y, 80, orange, 5, black)
+    
+    # Draw scale ticks (left to right)
+    r = 75
+    pressure_points = [ATM_PRESSURE, 100, 10, 1]
+    
+    for p in pressure_points:
+        angle = pressure_to_angle(p)
+        theta_rad = math.radians(angle)
+        xn = -int(r * math.cos(theta_rad))
+        yn = -int(r * math.sin(theta_rad))
+        LCD.line(center_x, center_y, center_x + xn, center_y + yn, white)
         
-def gesture_test_screen():
-    """Gesture test screen with visual feedback"""
-    # Initialize gesture mode
-    Touch.Mode = 0
-    Touch.Set_Mode(Touch.Mode)
+        # Label position
+        label_x = center_x + int((r+15) * math.cos(theta_rad))
+        label_y = center_y + int((r+15) * math.sin(theta_rad))
+        LCD.write_text(f"{p}", label_x-10, label_y-5, 1, white)
     
-    # Define gesture names and codes
-    gestures = [
-        {"name": "UP", "code": 0x01, "color": LCD.red},
-        {"name": "DOWN", "code": 0x02, "color": LCD.green},
-        {"name": "LEFT", "code": 0x03, "color": LCD.blue},
-        {"name": "RIGHT", "code": 0x04, "color": LCD.brown},
-        {"name": "LONG PRESS", "code": 0x0C, "color": LCD.orange},
-        {"name": "DOUBLE CLICK", "code": 0x0B, "color": 0x07E0}  # Cyan
-    ]
+    # Clear center
+    circle(center_x, center_y, 60, black)
     
-    # Header and footer
-    LCD.fill(LCD.white)
-    LCD.fill_rect(0, 0, 240, 40, 0x180f)  # Header
-    LCD.write_text("Gesture Test", 70, 15, 2, LCD.white)
+    # Calculate pointer position
+    angle = pressure_to_angle(pressure_mbar)
+    theta_rad = math.radians(angle)
+    pointer_length = 55
+    xn = -int(pointer_length * math.cos(theta_rad))
+    yn = -int(pointer_length * math.sin(theta_rad))
     
-    LCD.fill_rect(0, 200, 240, 40, 0x180f)  # Footer
-    LCD.write_text("Exit", 105, 215, 2, LCD.white)
+    # Draw pointer
+    pointer_color = red
+    LCD.line(center_x, center_y, center_x + xn, center_y + yn, pointer_color)
+    LCD.line(center_x, center_y, center_x + int(yn/5), center_y - int(xn/5), pointer_color)
+    LCD.line(center_x, center_y, center_x - int(yn/5), center_y + int(xn/5), pointer_color)
     
-    # Instructions
-    LCD.write_text("Perform gestures", 50, 60, 1, LCD.black)
-    LCD.write_text("as they appear", 55, 80, 1, LCD.black)
-    LCD.show()
-    time.sleep(2)
+    # Draw center circle
+    circle(center_x, center_y, 5, pointer_color)
     
-    # Test each gesture
-    for gesture in gestures:
-        LCD.fill_rect(0, 40, 240, 160, LCD.white)  # Clear main area
-        
-        # Draw prompt
-        LCD.fill_rect(40, 80, 160, 80, gesture["color"])
-        LCD.write_text(gesture["name"], 70, 110, 2, LCD.white)
-        LCD.show()
-        
-        # Wait for correct gesture
-        while Touch.Gestures != gesture["code"]:
-            time.sleep(0.1)
-        
-        # Visual feedback
-        LCD.fill_rect(40, 80, 160, 80, LCD.white)
-        LCD.write_text("✓ " + gesture["name"], 60, 110, 2, LCD.black)
-        LCD.show()
-        time.sleep(1)
+    # Display pressure value
+    if pressure_mbar >= 1:
+        pressure_text = f"{pressure_mbar:.1f} mbar"
+    else:
+        pressure_text = f"{pressure_mbar:.3f} mbar"
+    LCD.write_text(pressure_text, center_x - 50, center_y - 20, 2, white)
+
+def demo_pressure_gauge():
+    """Simulate pressure changes from ATM to vacuum"""
+    init_screen()
     
-    # Completion message
-    LCD.fill_rect(0, 40, 240, 160, LCD.white)
-    LCD.write_text("All gestures", 70, 90, 2, LCD.black)
-    LCD.write_text("completed!", 75, 120, 2, LCD.black)
-    LCD.show()
+    pressure = ATM_PRESSURE  # Start at atmospheric
+    direction = -1  # Start pumping down
     
-    # Wait for exit touch
     while True:
-        if Touch.Flag == 1:
-            if 200 <= Touch.Y_point <= 240:  # Footer touched
-                Touch.Flag = 0
-                break
+        # Exponential pressure change
+        if direction < 0:  # Pumping down
+            pressure *= 0.95
+            if pressure < MIN_PRESSURE:
+                pressure = MIN_PRESSURE
+                direction = 1  # Start venting
+        else:  # Venting up
+            pressure *= 1.05
+            if pressure > ATM_PRESSURE:
+                pressure = ATM_PRESSURE
+                direction = -1  # Start pumping
+        
+        pressure_screen(pressure)
+        LCD.show()
+        
+        if touch.Flag == 1:
+            touch.Flag = 0
+            break
+        
         time.sleep(0.1)
 
-# Example usage in your main loop (add this to your existing __main__ section)
-if __name__ == '__main__':
-    LCD = LCD_1inch28()
-    LCD.set_bl_pwm(65535)
-    Touch = Touch_CST816T(mode=1, LCD=LCD)
+if __name__=='__main__':
     while True:
-        gesture_test_screen()
+        demo_pressure_gauge()
+        status_screen("A", "Idle", orange)
